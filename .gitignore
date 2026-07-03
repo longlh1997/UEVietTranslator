@@ -1,0 +1,26 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+## Rider / VS Code
+.idea/
+.vscode/
+
+## Output của tool khi chạy thử (thư mục export/extract game — rất lớn, không commit)
+/output/
+/extracted/
+/*.pak
+/*.utoc
+/*.ucas
+
+## Game profile lưu AES key — KHÔNG commit vì có thể chứa key nhạy cảm của game bản quyền
+*.gameprofile.json
+/profiles/*.json
+!/profiles/.gitkeep
+
+## macOS / OS junk
+.DS_Store
+Thumbs.db

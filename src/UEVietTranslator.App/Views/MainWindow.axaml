@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:UEVietTranslator.App.ViewModels"
+        x:Class="UEVietTranslator.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="UEVietTranslator"
+        Width="960" Height="640">
+
+  <!--
+    Placeholder Pha 0. UI thật (wizard nhiều bước: chọn game -> unpack ->
+    xác nhận file ngôn ngữ -> extract/dịch -> repack) sẽ thay thế nội dung
+    này ở Pha 6, sau khi Core đã chạy ổn qua Cli. Xem docs/ROADMAP.md.
+  -->
+  <StackPanel Margin="24" Spacing="12">
+    <TextBlock Text="UEVietTranslator" FontSize="24" FontWeight="Bold" />
+    <TextBlock Text="{Binding StatusMessage}" />
+  </StackPanel>
+
+</Window>

@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Cấu hình chung cho mọi project trong solution — tránh lặp lại ở từng
+    .csproj. Xem docs/CODING_STANDARDS.md.
+  -->
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Bật cảnh báo nullable nghiêm ngặt nhưng không chặn build khi đang ở
+         giai đoạn scaffold/phát triển sớm. Cân nhắc bật TreatWarningsAsErrors
+         khi Core ổn định hơn (Pha 4 trở đi) — ghi quyết định vào
+         docs/DECISIONS.md nếu đổi. -->
+  </PropertyGroup>
+</Project>
