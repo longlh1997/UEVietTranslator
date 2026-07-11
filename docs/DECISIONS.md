@@ -233,6 +233,32 @@ tiếp, không phải quyết định đơn phương.
   (người dùng vẫn phải tự truyền `aesKeyHex` thủ công cho `unpack`) — để dành
   cho lúc làm UI thật (Pha 6) hoặc khi có nhu cầu cụ thể hơn.
 
+## ADR-008: `LocalizationDiscoveryService.ScanAsync` nhận `IUnpackProvider` + `GameProfile` + AES key qua tham số, không qua DI
+
+**Ngày:** 2026-07-11
+**Bối cảnh:** Khi implement bước 2 của `LocalizationDiscoveryService` (soi
+export table các `.uasset`/`.umap` không loại được ở bước 1 rẻ), service cần
+gọi `IUnpackProvider.InspectPackagesAsync(gameProfile, aesKeyHex, ...)` —
+nhưng chữ ký cũ của `ScanAsync` chỉ nhận `unpackedAssets, progress, ct`,
+không có cách nào lấy `gameProfile`/`aesKeyHex`/provider cần dùng. Đây là lỗ
+hổng đã ghi nhận trước ở ADR-004/ADR-005 nhưng chưa giải quyết chữ ký cụ thể.
+**Quyết định:** Thêm 3 tham số vào `ScanAsync`: `IUnpackProvider
+unpackProvider, GameProfile gameProfile, string? aesKeyHex`. `unpackProvider`
+nhận tường minh theo tham số do người gọi truyền vào (giống cách
+`UnpackAsync` được gọi), KHÔNG inject qua constructor/DI.
+**Lý do:** `IUnpackProvider` được đăng ký trong DI dưới 2 key (`"primary"` =
+CUE4Parse, `"fmodel-fallback"` = FModel) — việc chọn dùng cái nào là hành
+động của người dùng (ADR-002: fallback KHÔNG tự động), nên
+`LocalizationDiscoveryService` không được tự ý resolve 1 trong 2 qua DI theo
+kiểu ngầm định. Nhận tường minh qua tham số giữ tính nhất quán với
+`IUnpackProvider.UnpackAsync` và giữ `LocalizationDiscoveryService` không có
+constructor dependency nào cần đăng ký thêm.
+**Đánh đổi chấp nhận:** Người gọi (Cli/App, hoặc pipeline điều phối ở Pha
+6) phải tự truyền đúng `unpackProvider` đã chọn ở bước Unpack trước đó —
+chưa có cơ chế nào ép buộc 2 bước dùng cùng 1 provider ngoài kỷ luật code ở
+lớp gọi; chấp nhận được vì cùng mức rủi ro với việc truyền `gameProfile`/
+`aesKeyHex` thủ công đã tồn tại sẵn giữa các bước khác trong pipeline.
+
 ## Template cho ADR mới
 
 ```

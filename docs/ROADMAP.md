@@ -79,22 +79,45 @@ class từng export, KHÔNG đọc pixel/vertex/text thật). **CHƯA implement*
 (`CUE4ParseProvider.InspectPackagesAsync` đang throw `NotImplementedException`)
 — đây là việc cần làm ở Pha 3.
 
-- [ ] Implement `CUE4ParseProvider.InspectPackagesAsync`: mount 1 lần, gọi
-      `provider.LoadPackage`/`TryLoadPackage` cho từng virtual path trong lô,
-      lấy tên class của từng export, KHÔNG ghi ra đĩa.
-- [ ] `LocalizationDiscoveryService` quét theo 2 bước, chi phí khác nhau rõ rệt:
+- [x] Implement `CUE4ParseProvider.InspectPackagesAsync` (2026-07-09 — mount
+      1 lần qua helper `MountProviderAsync` mới (tách ra dùng chung với
+      `UnpackAsync`, tránh lặp code Initialize/SubmitKeys/Mount), sau đó gọi
+      `provider.TryLoadPackage` cho từng virtual path trong lô, đọc
+      `UObject.ExportType` của từng export — KHÔNG ghi gì ra đĩa. Package lỗi
+      parse trả về `ExportClassNames` rỗng thay vì fail cả lô, đúng thiết kế
+      trong `PackageExportSummary`. **CHƯA build/test được trong sandbox này**
+      (không có .NET SDK/mạng — đúng ràng buộc ở CLAUDE.md §4). Cần Hải Long
+      chạy `dotnet build` + `dotnet test` trên máy thật để bắt lỗi tên API
+      CUE4Parse (`TryLoadPackage`, `IPackage.GetExports()`, `UObject.ExportType`)
+      nếu version `1.2.2` khác với giả định.)
+- [x] `LocalizationDiscoveryService` quét theo 2 bước, chi phí khác nhau rõ rệt
+      (2026-07-11):
   - **Bước 1 (rẻ — chỉ đọc virtual path, không đọc nội dung):** lọc theo đuôi
-    `.locres`, hoặc nằm trong thư mục `Content/Localization/...`.
+    `.locres` (confidence 1.0), hoặc nằm trong thư mục
+    `Content/Localization/...` mà không phải `.locres` (confidence 0.6 — có
+    thể là `.locmeta`/manifest chứ không phải file ngôn ngữ thật).
   - **Bước 2 (đắt hơn nhưng chỉ mount 1 lần — xem ADR-005):** với
     `.uasset`/`.umap` còn lại (không loại được ở bước 1), gọi
-    `InspectPackagesAsync` theo lô, tự quyết định export class nào tính là
-    StringTable/DataTable dựa trên `PackageExportSummary` trả về. Lưu ý: vẫn
-    phải soi rất nhiều file (không phải "chỉ vài file ngôn ngữ") vì đuôi
-    `.uasset` dùng chung cho mọi loại asset (texture, blueprint,
-    StringTable...) — thứ tiết kiệm được là KHÔNG ghi hết ra đĩa và KHÔNG
-    remount lặp lại, không phải KHÔNG đọc gì.
-  - Fallback quét file text-like khác (JSON/XML custom, xem
-    docs/DOMAIN_KNOWLEDGE.md §3c).
+    `InspectPackagesAsync` MỘT LẦN cho cả lô, export class `StringTable`
+    (confidence 0.9) hoặc `DataTable` (confidence 0.5, rộng hơn nên kém chắc
+    chắn hơn) tính là `LocalizationFileKind.StringTableAsset`.
+  - Fallback: đuôi text-like khác (`.json/.xml/.csv/.txt/.yaml/.yml`) ngoài
+    thư mục Localization → `Unknown`, confidence thấp (0.2) — xem
+    docs/DOMAIN_KNOWLEDGE.md §3c.
+  - **QUYẾT ĐỊNH KIẾN TRÚC kèm theo:** đổi chữ ký
+    `ILocalizationDiscoveryService.ScanAsync` để nhận thêm
+    `IUnpackProvider unpackProvider, GameProfile gameProfile, string? aesKeyHex`
+    (cần để gọi `InspectPackagesAsync` ở bước 2 — lỗ hổng đã ghi nhận ở
+    ADR-004/ADR-005). `unpackProvider` nhận tường minh qua tham số (giống
+    `UnpackAsync`), KHÔNG inject qua DI, vì chọn CUE4Parse chính hay FModel
+    fallback là hành động người dùng (ADR-002) — nhất quán với cách
+    `IUnpackProvider` đã được đăng ký keyed trong `CoreServiceCollectionExtensions`.
+    Đây là mở rộng cơ học theo đúng thiết kế đã chốt ở ADR-005, không phải
+    hướng mới nên không dừng lại hỏi trước khi làm.
+  - Có 5 unit test dùng fake `IUnpackProvider` (không cần CUE4Parse thật) ở
+    `LocalizationDiscoveryServiceTests.cs`. **CHƯA build/test được trong
+    sandbox này** (không có .NET SDK — CLAUDE.md §4). Cần Hải Long chạy
+    `dotnet build` + `dotnet test` trên máy thật.
 - [ ] Cơ chế lưu lựa chọn của người dùng vào profile (không phải chọn lại mỗi
       lần)
 - [ ] UI (Avalonia) màn hình xác nhận/tick chọn thủ công
