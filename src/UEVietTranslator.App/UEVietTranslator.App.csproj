@@ -10,6 +10,22 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
+  <!--
+    Pha 6: publish thành 1 file .exe self-contained (không cần cài .NET
+    runtime trên máy Hải Long). Chỉ áp dụng khi publish có chỉ định
+    RuntimeIdentifier (VD `dotnet publish -r win-x64`) — KHÔNG áp dụng cho
+    `dotnet build`/`dotnet run` thường ngày (không set RuntimeIdentifier),
+    để không ép máy dev phải restore runtime pack của Windows mỗi lần build.
+    Xem docs/DECISIONS.md#adr-015 và scripts/publish-windows.ps1.
+  -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- TODO(Pha 0): chưa restore-verify, xem ghi chú trong Core.csproj -->
     <PackageReference Include="Avalonia" Version="11.*" />

@@ -558,6 +558,45 @@ vào `ICsvSchemaConverter`, implement trong `CsvSchemaConverter` tái dùng
 gọi round-trip CSV nhiều lần qua lại) — không phải hướng đi mới, chỉ là mở
 rộng cơ học interface đã có theo đúng module `CsvSchema` sở hữu nó.
 
+## ADR-015: Publish `UEVietTranslator.App` thành 1 file `.exe` self-contained cho `win-x64`
+
+**Ngày:** 2026-07-14
+**Bối cảnh:** Pha 6 cần "Publish self-contained exe" (docs/ROADMAP.md). App
+Windows-first (CLAUDE.md §1), và `CUE4Parse` đã tự mang theo
+`CUE4Parse-Natives.dll` — 1 thư viện native CHỈ chạy được trên Windows (PE
+image thật, không phải lỗi — đây cũng là lý do warning `MSB3246` vô hại khi
+build trên máy dev macOS, xem docs/DOMAIN_KNOWLEDGE.md). Vì vậy publish
+target thực tế chỉ có `win-x64` — không có ý nghĩa publish self-contained cho
+macOS/Linux khi phần lõi (CUE4Parse) không chạy được ở đó.
+**Quyết định:** Thêm 1 `PropertyGroup` có điều kiện
+(`Condition="'$(RuntimeIdentifier)' != ''"`) vào
+`UEVietTranslator.App.csproj` bật `SelfContained`, `PublishSingleFile`,
+`IncludeNativeLibrariesForSelfExtract`, `EnableCompressionInSingleFile` —
+CÓ ĐIỀU KIỆN để không ảnh hưởng `dotnet build`/`dotnet run` hàng ngày trên máy
+dev (không set `RuntimeIdentifier`), chỉ áp dụng khi publish có chỉ định RID
+tường minh (`dotnet publish -r win-x64`). Thêm script
+`scripts/publish-windows.ps1` gọi
+`dotnet publish src/UEVietTranslator.App -c Release -r win-x64 -p:DebugType=None`
+— `-p:DebugType=None` truyền qua command-line (global MSBuild property, áp
+dụng cho cả `UEVietTranslator.Core` được reference, không chỉ riêng App) để
+loại bỏ luôn `.pdb` thừa ra khỏi thư mục publish, kết quả cuối chỉ có đúng 1
+file `UEVietTranslator.App.exe` (~50MB đã nén, verify build cross-compile
+thành công từ máy macOS — không cần máy Windows để BUILD ra file exe, tuy vẫn
+cần máy Windows để CHẠY THỬ file đó).
+**Lý do:** `PublishSingleFile` + `IncludeNativeLibrariesForSelfExtract` giữ
+được đúng 1 file thực thi (đơn giản cho Hải Long phân phối/chạy), không cần
+Hải Long cài .NET runtime. Gate bằng `Condition` tránh việc mọi lần
+`dotnet build` bình thường trên máy dev phải cố NuGet-restore runtime pack
+của `win-x64` (không cần thiết, chỉ tốn thời gian/dung lượng khi không
+publish).
+**Đánh đổi chấp nhận:** `repak`/`retoc` (CLI ngoài dùng ở bước Repack, xem
+ADR-012) KHÔNG được đóng gói kèm exe này — Hải Long vẫn phải tự tải và đặt
+vào PATH riêng, giống trước Pha 6. **CHƯA verify chạy file `.exe` xuất ra
+thật trên máy Windows** — chỉ verify được bước build/publish thành công trên
+máy macOS (không có máy Windows trong môi trường này để double-click chạy
+thử) — cần Hải Long tự tải file exe (hoặc tự chạy lại
+`scripts/publish-windows.ps1`) và xác nhận chạy được trên Windows thật.
+
 ## Template cho ADR mới
 
 ```

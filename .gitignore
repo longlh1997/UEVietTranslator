@@ -16,6 +16,9 @@ obj/
 /*.utoc
 /*.ucas
 
+## Output của scripts/publish-windows.ps1 (file .exe self-contained ~50MB, xem ADR-015)
+/publish/
+
 ## Game profile lưu AES key — KHÔNG commit vì có thể chứa key nhạy cảm của game bản quyền
 *.gameprofile.json
 /profiles/*.json

@@ -261,23 +261,40 @@ class từng export, KHÔNG đọc pixel/vertex/text thật). **CHƯA implement*
       UI trước) và **CHƯA chạy thử toàn bộ 6 bước với Dragonwilds thật** —
       cần Hải Long tự chạy app, đi hết wizard với game thật, xác nhận mỗi
       bước hoạt động đúng và layout hiển thị hợp lý.)
-- [ ] Publish self-contained exe
+- [x] Publish self-contained exe (2026-07-14 — xem ADR-015. Publish target
+      chỉ `win-x64` (App Windows-first + `CUE4Parse-Natives.dll` là native
+      lib chỉ chạy Windows). Thêm `PropertyGroup` có điều kiện trong
+      `UEVietTranslator.App.csproj` (chỉ áp dụng khi publish có
+      `RuntimeIdentifier`, không ảnh hưởng `dotnet build`/`run` hàng ngày) bật
+      `SelfContained`+`PublishSingleFile`+`IncludeNativeLibrariesForSelfExtract`+`EnableCompressionInSingleFile`,
+      và script `scripts/publish-windows.ps1`. Verify: `dotnet publish
+      src/UEVietTranslator.App -c Release -r win-x64 -p:DebugType=None` chạy
+      được TRÊN MÁY macOS (cross-compile, không cần máy Windows để build), ra
+      đúng 1 file `UEVietTranslator.App.exe` (~50MB nén, không có `.pdb` thừa)
+      — đã build/publish thành công nhiều lần thử. **CHƯA chạy thử file .exe
+      thật trên Windows** (sandbox này không có máy Windows) — cần Hải Long
+      tự chạy `scripts/publish-windows.ps1` (hoặc dùng file exe đã build) trên
+      Windows thật, xác nhận app khởi động và wizard hoạt động bình thường
+      giống hệt khi chạy qua `dotnet run`. Lưu ý: `repak`/`retoc` (ADR-012)
+      KHÔNG được đóng gói kèm, vẫn phải tự cài riêng.)
 - [ ] Test với ít nhất 1 game UE khác ngoài Dragonwilds để xác nhận tool
       "dùng chung được", không chỉ hoạt động với 1 game
 
 ---
 
 **Trạng thái hiện tại (2026-07-14):** Pha 0-6 code đã xong phần lớn (trừ
-"Test full pipeline end-to-end" ở Pha 4, "Publish self-contained exe" và
-"Test với game UE khác" ở Pha 6 — cả 3 đều cần Hải Long), verify build + test
-trên máy thật (.NET 8 SDK 8.0.422, 52/52 test pass). Rủi ro CHƯA verify với
-thực tế vẫn còn nguyên (xem chi tiết ở từng mục trên): (1) `.locres` write tự
-viết binary — ADR-010, (2) `repak`/`retoc` CLI ngoài chưa chạy thử binary
-thật — ADR-012, (3) Gemini API chưa gọi thật, (4) wizard UI mới của Pha 6
-chưa chạy thử bằng mắt/với game thật. Bước tiếp theo NÊN là Hải Long tự chạy
-trọn wizard với Dragonwilds thật — mọi rủi ro trên đều có thể đổi hướng thiết
-kế nếu phát hiện sai lúc test thật, trước khi đầu tư thêm vào "Publish" hay
-"test game khác".
+"Test full pipeline end-to-end" ở Pha 4 và "Test với game UE khác" ở Pha 6 —
+cả 2 đều cần Hải Long), verify build + test trên máy thật (.NET 8 SDK
+8.0.422, 52/52 test pass), publish self-contained `.exe` cho `win-x64` cũng
+build thành công (ADR-015). Rủi ro CHƯA verify với thực tế vẫn còn nguyên (xem
+chi tiết ở từng mục trên): (1) `.locres` write tự viết binary — ADR-010, (2)
+`repak`/`retoc` CLI ngoài chưa chạy thử binary thật — ADR-012, (3) Gemini API
+chưa gọi thật, (4) wizard UI mới của Pha 6 chưa chạy thử bằng mắt/với game
+thật, (5) file `.exe` đã publish chưa chạy thử trên Windows thật. Bước tiếp
+theo NÊN là Hải Long tự chạy trọn wizard (qua `dotnet run` hoặc file `.exe`
+vừa publish) với Dragonwilds thật — mọi rủi ro trên đều có thể đổi hướng
+thiết kế nếu phát hiện sai lúc test thật, trước khi đầu tư thêm vào "test
+game khác".
 
 Vẫn cần Hải Long tự chạy thử app Avalonia
 (`dotnet run --project src/UEVietTranslator.App`) đi hết 6 bước wizard với
