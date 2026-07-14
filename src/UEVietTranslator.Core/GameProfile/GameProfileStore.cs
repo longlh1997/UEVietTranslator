@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using UEVietTranslator.Core.Common;
+using UEVietTranslator.Core.LocalizationDiscovery;
 
 namespace UEVietTranslator.Core.GameProfile;
 
@@ -43,7 +44,16 @@ public sealed class GameProfileStore : IGameProfileStore
         {
             Directory.CreateDirectory(_profilesDirectory);
 
-            var stored = new StoredGameProfile(profile, validatedAesKeys);
+            // Giữ lại lựa chọn file ngôn ngữ đã xác nhận trước đó (nếu có) —
+            // SaveAsync có thể được gọi lại sau khi game update (re-detect +
+            // re-resolve key), không nên xoá mất lựa chọn người dùng đã xác
+            // nhận thủ công ở bước khác. Xem docs/DECISIONS.md#adr-009.
+            var existingConfirmedFiles = await LoadAsync(profile.GameDirectory, cancellationToken)
+                .ConfigureAwait(false) is { IsSuccess: true } existing
+                ? existing.Value!.ConfirmedLocalizationFiles
+                : Array.Empty<ConfirmedLocalizationFile>();
+
+            var stored = new StoredGameProfile(profile, validatedAesKeys, existingConfirmedFiles);
             var filePath = GetFilePath(profile.GameDirectory);
 
             await using var stream = File.Create(filePath);
@@ -55,6 +65,33 @@ public sealed class GameProfileStore : IGameProfileStore
         catch (Exception ex)
         {
             return Result.Failure($"Lưu profile thất bại: {ex.Message}");
+        }
+    }
+
+    public async Task<Result> SaveConfirmedLocalizationFilesAsync(
+        string gameDirectory,
+        IReadOnlyList<ConfirmedLocalizationFile> confirmedFiles,
+        CancellationToken cancellationToken)
+    {
+        var loadResult = await LoadAsync(gameDirectory, cancellationToken).ConfigureAwait(false);
+        if (!loadResult.IsSuccess)
+            return Result.Failure(
+                $"Chưa có profile nào lưu cho thư mục game này — cần chạy detect + resolve-key trước: {loadResult.Error}");
+
+        try
+        {
+            var stored = loadResult.Value! with { ConfirmedLocalizationFiles = confirmedFiles };
+            var filePath = GetFilePath(gameDirectory);
+
+            await using var stream = File.Create(filePath);
+            await JsonSerializer.SerializeAsync(stream, stored, JsonOptions, cancellationToken)
+                .ConfigureAwait(false);
+
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure($"Lưu lựa chọn file ngôn ngữ thất bại: {ex.Message}");
         }
     }
 

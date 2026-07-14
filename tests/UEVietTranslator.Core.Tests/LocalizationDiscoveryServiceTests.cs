@@ -44,6 +44,15 @@ public class LocalizationDiscoveryServiceTests
 
             return Task.FromResult(Result<IReadOnlyList<PackageExportSummary>>.Success(summaries));
         }
+
+        public Task<Result<IReadOnlyList<UnpackedAssetRef>>> ExtractFilesAsync(
+            GameProfile.GameProfile gameProfile,
+            string? aesKeyHex,
+            IReadOnlyList<string> virtualPaths,
+            string outputDirectory,
+            IProgress<ProgressInfo>? progress,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Không dùng trong test này.");
     }
 
     private static readonly GameProfile.GameProfile DummyProfile = new(
@@ -162,5 +171,14 @@ public class LocalizationDiscoveryServiceTests
             IProgress<ProgressInfo>? progress,
             CancellationToken cancellationToken) =>
             Task.FromResult(Result<IReadOnlyList<PackageExportSummary>>.Failure("mount lỗi giả lập"));
+
+        public Task<Result<IReadOnlyList<UnpackedAssetRef>>> ExtractFilesAsync(
+            GameProfile.GameProfile gameProfile,
+            string? aesKeyHex,
+            IReadOnlyList<string> virtualPaths,
+            string outputDirectory,
+            IProgress<ProgressInfo>? progress,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

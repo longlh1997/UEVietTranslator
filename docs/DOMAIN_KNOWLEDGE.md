@@ -115,6 +115,16 @@ Một game có thể dùng CẢ HAI cùng lúc (một số asset cũ đóng `.pa
   đã ký — mỗi vùng như vậy có thể sinh ra hàng nghìn-hàng triệu candidate
   cần validate).
 
+- **2026-07-14 — Ghi `.locres` KHÔNG có thư viện hỗ trợ, đã tự viết binary
+  writer (`LocresBinaryFormat.Write`) — xem docs/DECISIONS.md#adr-010 để đọc
+  đầy đủ lý do/rủi ro.** Tóm tắt điều quan trọng nhất: writer này CHƯA test
+  với file `.locres` thật, CHƯA load thử trong game — nếu sau này gặp lỗi
+  "text tiếng Việt không hiện ra dù đã ghi/repack thành công", đây là nghi
+  phạm đầu tiên cần kiểm tra, KHÔNG phải lỗi ở `RepackService` hay
+  `Translation`. Cách debug: mở file `.locres` đã ghi bằng FModel hoặc
+  UnrealLocres (tool cộng đồng, Python) để xem có đọc được không trước khi
+  nghi ngờ code C# trong repo này.
+
 ## 5. Việc cần xác nhận cụ thể cho RuneScape: Dragonwilds (chưa xác nhận)
 
 - [ ] Dùng `.pak` hay IoStore hay cả hai?

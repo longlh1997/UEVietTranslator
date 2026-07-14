@@ -16,6 +16,16 @@ public enum LocalizationFileKind
 public sealed record LocalizationFileCandidate(string Path, LocalizationFileKind Kind, double Confidence);
 
 /// <summary>
+/// 1 file ngôn ngữ đã được người dùng xác nhận thủ công (qua CLI/UI), khác
+/// <see cref="LocalizationFileCandidate"/> ở chỗ không còn <c>Confidence</c>
+/// — đã confirm rồi thì độ tin cậy không còn ý nghĩa. Đây là dữ liệu được
+/// lưu lại vào <c>StoredGameProfile</c> để không phải chạy lại
+/// <see cref="ILocalizationDiscoveryService.ScanAsync"/> và xác nhận lại từ
+/// đầu mỗi lần mở app cho cùng 1 game — xem docs/DECISIONS.md#adr-009.
+/// </summary>
+public sealed record ConfirmedLocalizationFile(string Path, LocalizationFileKind Kind);
+
+/// <summary>
 /// Quét cây asset đã unpack, GỢI Ý (không tự quyết định) file nào có khả
 /// năng là file ngôn ngữ. Người dùng LUÔN phải xác nhận/chỉnh sửa lựa chọn
 /// qua UI — đây là yêu cầu thiết kế cốt lõi của tool (không có cách nào biết

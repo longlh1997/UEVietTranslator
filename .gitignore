@@ -21,6 +21,9 @@ obj/
 /profiles/*.json
 !/profiles/.gitkeep
 
+## Gemini API key — KHÔNG commit, xem docs/DECISIONS.md#adr-011
+/config/gemini-settings.json
+
 ## macOS / OS junk
 .DS_Store
 Thumbs.db

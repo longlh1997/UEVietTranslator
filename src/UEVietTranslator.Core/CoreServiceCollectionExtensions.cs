@@ -33,6 +33,11 @@ public static class CoreServiceCollectionExtensions
         services.AddSingleton<ILocalizationDiscoveryService, LocalizationDiscoveryService>();
         services.AddSingleton<IAssetReaderWriter, AssetReaderWriter>();
         services.AddSingleton<ICsvSchemaConverter, CsvSchemaConverter>();
+        services.AddSingleton<IGeminiSettingsStore, GeminiSettingsStore>();
+        // HttpClient dùng chung 1 instance (best practice — tránh socket
+        // exhaustion nếu new HttpClient() mỗi lần gọi), đủ dùng cho app
+        // desktop 1 người dùng gọi tuần tự, không cần IHttpClientFactory.
+        services.AddSingleton<HttpClient>();
         services.AddSingleton<ITranslationService, GeminiTranslationService>();
         services.AddSingleton<IRepackService, RepackService>();
 

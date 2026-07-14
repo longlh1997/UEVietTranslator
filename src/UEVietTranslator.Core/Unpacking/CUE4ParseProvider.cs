@@ -115,6 +115,80 @@ public sealed class CUE4ParseProvider : IUnpackProvider
         return Result<IReadOnlyList<PackageExportSummary>>.Success(summaries);
     }
 
+    public async Task<Result<IReadOnlyList<UnpackedAssetRef>>> ExtractFilesAsync(
+        GameProfile.GameProfile gameProfile,
+        string? aesKeyHex,
+        IReadOnlyList<string> virtualPaths,
+        string outputDirectory,
+        IProgress<ProgressInfo>? progress,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var mountResult = await MountProviderAsync(gameProfile, aesKeyHex, progress, cancellationToken)
+            .ConfigureAwait(false);
+        if (!mountResult.IsSuccess)
+            return Result<IReadOnlyList<UnpackedAssetRef>>.Failure(mountResult.Error!);
+
+        using var provider = mountResult.Value!;
+
+        // UAssetAPI (đọc StringTable ở AssetIO) mở 1 file .uasset trên đĩa
+        // và tự tìm file .uexp cùng tên bên cạnh nếu asset đó tách export
+        // data ra file riêng — phải ghi kèm .uexp/.ubulk ra đĩa cùng .uasset
+        // nếu chúng tồn tại trong provider.Files, dù người gọi không tự yêu
+        // cầu, nếu không UAssetAPI sẽ đọc thiếu dữ liệu export. Xem
+        // docs/DECISIONS.md#adr-010.
+        var companionExtensions = new[] { ".uexp", ".ubulk" };
+        var pathsToWrite = new List<string>(virtualPaths);
+        foreach (var virtualPath in virtualPaths)
+        {
+            if (!virtualPath.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var basePath = virtualPath[..^".uasset".Length];
+            foreach (var ext in companionExtensions)
+            {
+                var companionPath = basePath + ext;
+                if (provider.Files.ContainsKey(companionPath))
+                    pathsToWrite.Add(companionPath);
+            }
+        }
+
+        var results = new List<UnpackedAssetRef>(virtualPaths.Count);
+        var total = pathsToWrite.Count;
+        var done = 0;
+
+        foreach (var virtualPath in pathsToWrite)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string? extractedPath = null;
+            if (provider.TrySaveAsset(virtualPath, out var data))
+            {
+                // Giữ nguyên cấu trúc thư mục con theo virtual path — tránh
+                // trùng tên nếu 2 file khác thư mục trong pak có cùng tên
+                // base (VD: cả GameA và GameB đều có "Strings.uasset").
+                extractedPath = Path.Combine(outputDirectory, virtualPath.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(extractedPath)!);
+                await File.WriteAllBytesAsync(extractedPath, data, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Chỉ trả về UnpackedAssetRef cho đúng những path người gọi yêu
+            // cầu — file .uexp/.ubulk kèm theo chỉ là phụ trợ cho UAssetAPI
+            // tìm thấy, không phải thứ người gọi cần biết kết quả riêng.
+            if (virtualPaths.Contains(virtualPath))
+                results.Add(new UnpackedAssetRef(virtualPath, extractedPath));
+
+            done++;
+            if (done % 20 == 0 || done == total)
+                progress?.Report(new ProgressInfo(
+                    total == 0 ? 100 : done * 100.0 / total,
+                    $"Đã extract {done}/{total} file"));
+        }
+
+        return Result<IReadOnlyList<UnpackedAssetRef>>.Success(results);
+    }
+
     /// <summary>
     /// Khởi tạo <see cref="DefaultFileProvider"/>, submit AES key (nếu có) và
     /// mount pak/IoStore — dùng chung bởi <see cref="UnpackAsync"/> và

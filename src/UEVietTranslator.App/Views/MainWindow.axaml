@@ -7,13 +7,64 @@
         Width="960" Height="640">
 
   <!--
-    Placeholder Pha 0. UI thật (wizard nhiều bước: chọn game -> unpack ->
-    xác nhận file ngôn ngữ -> extract/dịch -> repack) sẽ thay thế nội dung
-    này ở Pha 6, sau khi Core đã chạy ổn qua Cli. Xem docs/ROADMAP.md.
+    Pha 3: màn hình đơn "Quét + xác nhận file ngôn ngữ". Đây KHÔNG phải wizard
+    đầy đủ (chưa có bước chọn/xác nhận game, extract, dịch, repack) — những
+    bước đó vẫn chỉ có qua Cli tới khi làm Pha 6. Xem docs/ROADMAP.md.
+    Pha 5: thêm chế độ FModel fallback (ADR-002/ADR-013) khi CUE4Parse fail.
   -->
-  <StackPanel Margin="24" Spacing="12">
-    <TextBlock Text="UEVietTranslator" FontSize="24" FontWeight="Bold" />
-    <TextBlock Text="{Binding StatusMessage}" />
-  </StackPanel>
+  <DockPanel Margin="16">
+
+    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+      <TextBlock Text="UEVietTranslator" FontSize="24" FontWeight="Bold" />
+
+      <CheckBox Content="Dùng FModel fallback (khi Quét tự động thất bại)" IsChecked="{Binding UseFModelFallback}" />
+
+      <TextBlock IsVisible="{Binding UseFModelFallback}" TextWrapping="Wrap" Opacity="0.8"
+                 Text="Mở FModel, chọn game, xuất (Export/Save Raw Data) toàn bộ hoặc thư mục Content ra 1 thư mục trên đĩa, rồi nhập thư mục đó vào ô 'Thư mục game' bên dưới. FModel hiển thị UE version của game ở thanh trạng thái — gõ đúng version đó vào ô 'UE version'." />
+
+      <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Thư mục game:" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding GameDirectory}"
+                  Watermark="VD: D:\Games\RuneScape Dragonwilds" />
+        <Button Grid.Row="0" Grid.Column="2" Content="Quét" Command="{Binding ScanCommand}" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="AES key (tuỳ chọn):" VerticalAlignment="Center"
+                   IsVisible="{Binding !UseFModelFallback}" />
+        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding AesKeyHex}"
+                  IsVisible="{Binding !UseFModelFallback}"
+                  Watermark="Để trống để dùng key đã lưu từ resolve-key (nếu có)" />
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="UE version:" VerticalAlignment="Center"
+                   IsVisible="{Binding UseFModelFallback}" />
+        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FallbackEngineVersion}"
+                  IsVisible="{Binding UseFModelFallback}" Watermark="VD: 5.3" />
+      </Grid>
+
+      <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <Button DockPanel.Dock="Bottom" Content="Lưu lựa chọn" Command="{Binding SaveCommand}"
+            HorizontalAlignment="Right" Margin="0,12,0,0" />
+
+    <ScrollViewer>
+      <ItemsControl ItemsSource="{Binding Candidates}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:LocalizationCandidateItemViewModel">
+            <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="4">
+              <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                <CheckBox Grid.Column="0" IsChecked="{Binding IsConfirmed}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Path}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                <TextBlock Grid.Column="2" Text="{Binding Confidence, StringFormat='{}{0:0.0}'}"
+                           VerticalAlignment="Center" Opacity="0.7" />
+                <ComboBox Grid.Column="3" ItemsSource="{Binding AllKinds}" SelectedItem="{Binding Kind}"
+                          MinWidth="140" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+  </DockPanel>
 
 </Window>

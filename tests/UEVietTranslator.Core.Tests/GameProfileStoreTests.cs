@@ -1,4 +1,5 @@
 using UEVietTranslator.Core.GameProfile;
+using UEVietTranslator.Core.LocalizationDiscovery;
 using Xunit;
 
 namespace UEVietTranslator.Core.Tests;
@@ -83,5 +84,71 @@ public class GameProfileStoreTests : IDisposable
         var content = await File.ReadAllTextAsync(files[0]);
         Assert.Contains("\"IoStore\"", content);
         Assert.Contains("RuneScape_Dragonwilds", Path.GetFileName(files[0]));
+    }
+
+    [Fact]
+    public async Task SaveConfirmedLocalizationFilesAsync_ChuaCoProfile_TraVeFailureRoRang()
+    {
+        var store = new GameProfileStore(_profilesDir);
+        var confirmed = new List<ConfirmedLocalizationFile>
+        {
+            new("Content/Localization/Game/vi/Game.locres", LocalizationFileKind.Locres),
+        };
+
+        var result = await store.SaveConfirmedLocalizationFilesAsync(
+            @"C:\Games\Chua Ton Tai", confirmed, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Chưa có profile nào lưu", result.Error);
+    }
+
+    [Fact]
+    public async Task SaveConfirmedLocalizationFilesAsync_DaCoProfile_LuuDuocMaKhongDungToiProfileVaKey()
+    {
+        var store = new GameProfileStore(_profilesDir);
+        var profile = MakeProfile(@"D:\Games\RuneScape Dragonwilds");
+        var keys = new List<string> { new string('A', 64) };
+        await store.SaveAsync(profile, keys, CancellationToken.None);
+
+        var confirmed = new List<ConfirmedLocalizationFile>
+        {
+            new("Content/Localization/Game/vi/Game.locres", LocalizationFileKind.Locres),
+            new("Content/Game/UI/DA_Strings.uasset", LocalizationFileKind.StringTableAsset),
+        };
+        var saveResult = await store.SaveConfirmedLocalizationFilesAsync(
+            profile.GameDirectory, confirmed, CancellationToken.None);
+        Assert.True(saveResult.IsSuccess);
+
+        var loadResult = await store.LoadAsync(profile.GameDirectory, CancellationToken.None);
+        Assert.True(loadResult.IsSuccess);
+        Assert.Equal(profile, loadResult.Value!.Profile);
+        Assert.Equal(keys, loadResult.Value.ValidatedAesKeys);
+        Assert.Equal(confirmed, loadResult.Value.ConfirmedLocalizationFiles);
+    }
+
+    [Fact]
+    public async Task SaveAsync_GoiLaiSauKhiDaXacNhanFileNgonNgu_KhongXoaMatLuaChonCu()
+    {
+        // SaveAsync có thể được gọi lại sau khi game update (re-detect +
+        // re-resolve key) — không được xoá mất lựa chọn file ngôn ngữ người
+        // dùng đã xác nhận thủ công ở bước khác. Xem docs/DECISIONS.md#adr-009.
+        var store = new GameProfileStore(_profilesDir);
+        var profile = MakeProfile(@"D:\Games\RuneScape Dragonwilds");
+        await store.SaveAsync(profile, [new string('A', 64)], CancellationToken.None);
+
+        var confirmed = new List<ConfirmedLocalizationFile>
+        {
+            new("Content/Localization/Game/vi/Game.locres", LocalizationFileKind.Locres),
+        };
+        await store.SaveConfirmedLocalizationFilesAsync(profile.GameDirectory, confirmed, CancellationToken.None);
+
+        // Game update: resolve-key chạy lại, key mới khác key cũ.
+        var updatedProfile = profile with { ExecutableHash = "NEWHASH1234567890" };
+        await store.SaveAsync(updatedProfile, [new string('B', 64)], CancellationToken.None);
+
+        var loadResult = await store.LoadAsync(profile.GameDirectory, CancellationToken.None);
+        Assert.True(loadResult.IsSuccess);
+        Assert.Equal(updatedProfile, loadResult.Value!.Profile);
+        Assert.Equal(confirmed, loadResult.Value.ConfirmedLocalizationFiles);
     }
 }
