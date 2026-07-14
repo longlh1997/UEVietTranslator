@@ -4,65 +4,166 @@
         x:Class="UEVietTranslator.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="UEVietTranslator"
-        Width="960" Height="640">
+        Width="1100" Height="720">
 
   <!--
-    Pha 3: màn hình đơn "Quét + xác nhận file ngôn ngữ". Đây KHÔNG phải wizard
-    đầy đủ (chưa có bước chọn/xác nhận game, extract, dịch, repack) — những
-    bước đó vẫn chỉ có qua Cli tới khi làm Pha 6. Xem docs/ROADMAP.md.
-    Pha 5: thêm chế độ FModel fallback (ADR-002/ADR-013) khi CUE4Parse fail.
+    Pha 6: wizard 6 bước bao trọn pipeline (Setup -> ConfirmFiles ->
+    ExtractAndExportCsv -> Translate -> Review -> Repack). Mỗi bước là 1
+    Border IsVisible theo CurrentStep của MainWindowViewModel — chỉ 1 bước
+    hiển thị tại 1 thời điểm. Xem MainWindowViewModel.*.cs cho logic từng
+    bước, docs/ROADMAP.md Pha 6 cho bối cảnh.
   -->
   <DockPanel Margin="16">
 
-    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+    <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,12">
       <TextBlock Text="UEVietTranslator" FontSize="24" FontWeight="Bold" />
-
-      <CheckBox Content="Dùng FModel fallback (khi Quét tự động thất bại)" IsChecked="{Binding UseFModelFallback}" />
-
-      <TextBlock IsVisible="{Binding UseFModelFallback}" TextWrapping="Wrap" Opacity="0.8"
-                 Text="Mở FModel, chọn game, xuất (Export/Save Raw Data) toàn bộ hoặc thư mục Content ra 1 thư mục trên đĩa, rồi nhập thư mục đó vào ô 'Thư mục game' bên dưới. FModel hiển thị UE version của game ở thanh trạng thái — gõ đúng version đó vào ô 'UE version'." />
-
-      <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="Thư mục game:" VerticalAlignment="Center" />
-        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding GameDirectory}"
-                  Watermark="VD: D:\Games\RuneScape Dragonwilds" />
-        <Button Grid.Row="0" Grid.Column="2" Content="Quét" Command="{Binding ScanCommand}" />
-
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="AES key (tuỳ chọn):" VerticalAlignment="Center"
-                   IsVisible="{Binding !UseFModelFallback}" />
-        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding AesKeyHex}"
-                  IsVisible="{Binding !UseFModelFallback}"
-                  Watermark="Để trống để dùng key đã lưu từ resolve-key (nếu có)" />
-
-        <TextBlock Grid.Row="2" Grid.Column="0" Text="UE version:" VerticalAlignment="Center"
-                   IsVisible="{Binding UseFModelFallback}" />
-        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FallbackEngineVersion}"
-                  IsVisible="{Binding UseFModelFallback}" Watermark="VD: 5.3" />
-      </Grid>
-
-      <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding StepNumber, StringFormat='Bước {0}/6: '}" FontWeight="Bold" FontSize="14">
+        <TextBlock.Text>
+          <MultiBinding StringFormat="Bước {0}/{1}: {2}">
+            <Binding Path="StepNumber" />
+            <Binding Path="TotalSteps" />
+            <Binding Path="StepTitle" />
+          </MultiBinding>
+        </TextBlock.Text>
+      </TextBlock>
     </StackPanel>
 
-    <Button DockPanel.Dock="Bottom" Content="Lưu lựa chọn" Command="{Binding SaveCommand}"
-            HorizontalAlignment="Right" Margin="0,12,0,0" />
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
+      <Button Grid.Column="0" Content="Quay lại" Command="{Binding BackCommand}" />
+      <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0" />
+      <Button Grid.Column="2" Content="Tiếp tục" Command="{Binding NextCommand}" IsVisible="{Binding !IsRepackStep}" />
+    </Grid>
 
     <ScrollViewer>
-      <ItemsControl ItemsSource="{Binding Candidates}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:LocalizationCandidateItemViewModel">
-            <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="4">
-              <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
-                <CheckBox Grid.Column="0" IsChecked="{Binding IsConfirmed}" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="{Binding Path}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                <TextBlock Grid.Column="2" Text="{Binding Confidence, StringFormat='{}{0:0.0}'}"
-                           VerticalAlignment="Center" Opacity="0.7" />
-                <ComboBox Grid.Column="3" ItemsSource="{Binding AllKinds}" SelectedItem="{Binding Kind}"
-                          MinWidth="140" />
-              </Grid>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <StackPanel Spacing="16">
+
+        <!-- Bước 1: Setup & Quét -->
+        <Border IsVisible="{Binding IsSetupStep}" BorderBrush="Gray" BorderThickness="1" Padding="12" CornerRadius="4">
+          <StackPanel Spacing="8">
+            <CheckBox Content="Dùng FModel fallback (khi Quét tự động thất bại)" IsChecked="{Binding UseFModelFallback}" />
+
+            <TextBlock IsVisible="{Binding UseFModelFallback}" TextWrapping="Wrap" Opacity="0.8"
+                       Text="Mở FModel, chọn game, xuất (Export/Save Raw Data) toàn bộ hoặc thư mục Content ra 1 thư mục trên đĩa, rồi nhập thư mục đó vào ô 'Thư mục game' bên dưới. FModel hiển thị UE version của game ở thanh trạng thái — gõ đúng version đó vào ô 'UE version'." />
+
+            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="Thư mục game:" VerticalAlignment="Center" />
+              <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding GameDirectory}"
+                        Watermark="VD: D:\Games\RuneScape Dragonwilds" />
+              <Button Grid.Row="0" Grid.Column="2" Content="Quét" Command="{Binding ScanCommand}" />
+
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="AES key (tuỳ chọn):" VerticalAlignment="Center"
+                         IsVisible="{Binding !UseFModelFallback}" />
+              <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding AesKeyHex}"
+                        IsVisible="{Binding !UseFModelFallback}"
+                        Watermark="Để trống để dùng key đã lưu từ resolve-key (nếu có)" />
+
+              <TextBlock Grid.Row="2" Grid.Column="0" Text="UE version:" VerticalAlignment="Center"
+                         IsVisible="{Binding UseFModelFallback}" />
+              <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding FallbackEngineVersion}"
+                        IsVisible="{Binding UseFModelFallback}" Watermark="VD: 5.3" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- Bước 2: Xác nhận file ngôn ngữ -->
+        <Border IsVisible="{Binding IsConfirmFilesStep}" BorderBrush="Gray" BorderThickness="1" Padding="12" CornerRadius="4">
+          <DockPanel MinHeight="300">
+            <Button DockPanel.Dock="Bottom" Content="Lưu lựa chọn (để tái dùng ở lần Quét sau)"
+                    Command="{Binding SaveConfirmedCommand}" HorizontalAlignment="Right" Margin="0,8,0,0" />
+            <ItemsControl ItemsSource="{Binding Candidates}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:LocalizationCandidateItemViewModel">
+                  <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="4">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                      <CheckBox Grid.Column="0" IsChecked="{Binding IsConfirmed}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Text="{Binding Path}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                      <TextBlock Grid.Column="2" Text="{Binding Confidence, StringFormat='{}{0:0.0}'}"
+                                 VerticalAlignment="Center" Opacity="0.7" />
+                      <ComboBox Grid.Column="3" ItemsSource="{Binding AllKinds}" SelectedItem="{Binding Kind}"
+                                MinWidth="140" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </DockPanel>
+        </Border>
+
+        <!-- Bước 3: Extract & Xuất CSV -->
+        <Border IsVisible="{Binding IsExtractAndExportCsvStep}" BorderBrush="Gray" BorderThickness="1" Padding="12" CornerRadius="4">
+          <StackPanel Spacing="8">
+            <TextBlock TextWrapping="Wrap" Opacity="0.8"
+                       Text="Extract các file đã xác nhận ra đĩa, đọc text gốc, rồi xuất ra 1 file CSV chuẩn hoá để dịch/review." />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="Đường dẫn CSV:" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding CsvPath}" Watermark="Để trống để dùng đường dẫn mặc định" />
+            </Grid>
+            <Button Content="Extract + Xuất CSV" Command="{Binding ExtractAndExportCsvCommand}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+
+        <!-- Bước 4: Dịch tự động -->
+        <Border IsVisible="{Binding IsTranslateStep}" BorderBrush="Gray" BorderThickness="1" Padding="12" CornerRadius="4">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="Gemini API key:" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding GeminiApiKey}" PasswordChar="*" />
+              <Button Grid.Column="2" Content="Lưu key" Command="{Binding SaveGeminiKeyCommand}" />
+            </Grid>
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="Model:" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding GeminiModel}" />
+            </Grid>
+            <Button Content="Dịch tự động" Command="{Binding TranslateCommand}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+
+        <!-- Bước 5: Review bản dịch -->
+        <Border IsVisible="{Binding IsReviewStep}" BorderBrush="Gray" BorderThickness="1" Padding="12" CornerRadius="4">
+          <DockPanel MinHeight="300">
+            <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,Auto" Margin="0,8,0,0">
+              <Button Grid.Column="0" Content="Lưu CSV" Command="{Binding SaveCsvRowsCommand}" Margin="0,0,8,0" />
+              <Button Grid.Column="1" Content="Tải lại từ CSV" Command="{Binding ReloadCsvRowsCommand}" />
+            </Grid>
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding CsvRows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:CsvRowItemViewModel">
+                    <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="4">
+                      <Grid ColumnDefinitions="2*,2*,Auto" ColumnSpacing="8" RowDefinitions="Auto,Auto">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding SourceText}" TextWrapping="Wrap" Opacity="0.7" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TranslatedText}" TextWrapping="Wrap" AcceptsReturn="True" />
+                        <ComboBox Grid.Row="0" Grid.Column="2" ItemsSource="{Binding AllStatuses}" SelectedItem="{Binding Status}" MinWidth="140" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding Key}" Opacity="0.5" FontSize="11" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        <!-- Bước 6: Ghi asset & Repack -->
+        <Border IsVisible="{Binding IsRepackStep}" BorderBrush="Gray" BorderThickness="1" Padding="12" CornerRadius="4">
+          <StackPanel Spacing="8">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="Output pak path:" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding OutputPakPath}" Watermark="VD: D:\output\Game_P.pak" />
+            </Grid>
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="repak path (tuỳ chọn):" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding RepakExecutablePath}" Watermark="Để trống để tự tìm qua PATH" />
+            </Grid>
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Text="retoc path (tuỳ chọn):" VerticalAlignment="Center" />
+              <TextBox Grid.Column="1" Text="{Binding RetocExecutablePath}" Watermark="Để trống để tự tìm qua PATH" />
+            </Grid>
+            <Button Content="Ghi bản dịch + Repack" Command="{Binding WriteAssetsAndRepackCommand}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
     </ScrollViewer>
 
   </DockPanel>

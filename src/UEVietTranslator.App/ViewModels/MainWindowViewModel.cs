@@ -1,27 +1,27 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
-using UEVietTranslator.Core.Common;
+using UEVietTranslator.Core.AssetIO;
+using UEVietTranslator.Core.CsvSchema;
 using UEVietTranslator.Core.GameProfile;
 using UEVietTranslator.Core.LocalizationDiscovery;
+using UEVietTranslator.Core.Repacking;
+using UEVietTranslator.Core.Translation;
 using UEVietTranslator.Core.Unpacking;
 
 namespace UEVietTranslator.App.ViewModels;
 
 /// <summary>
-/// Màn hình đơn Pha 3: nhập đường dẫn game -> Quét (detect + unpack + scan
-/// file ngôn ngữ bằng <see cref="ILocalizationDiscoveryService"/>) -> tick
-/// chọn/sửa loại file -> Lưu (persist qua
-/// <see cref="IGameProfileStore.SaveConfirmedLocalizationFilesAsync"/>). Đây
-/// là nền tảng sẽ được tách thành 1 bước trong wizard nhiều bước ở Pha 6, xem
-/// docs/ROADMAP.md.
-///
-/// Pha 5 thêm chế độ FModel fallback (<see cref="UseFModelFallback"/>) — khi
-/// CUE4Parse fail (ADR-002), người dùng tự export bằng FModel rồi trỏ vào
-/// đây. Xem docs/DECISIONS.md#adr-013: ở chế độ này, ô "Thư mục game" thực
-/// chất là thư mục FModel đã export ra, KHÔNG chạy qua
-/// <see cref="IGameProfileDetector"/> (sẽ fail vì không có .exe/pak để quét).
+/// Wizard Pha 6 bao trọn toàn bộ pipeline (xem CLAUDE.md §1):
+/// Setup/Scan → ConfirmFiles → ExtractAndExportCsv → Translate → Review →
+/// Repack. Vẫn là 1 ViewModel/1 DataContext duy nhất (không tách nhiều
+/// ViewModel riêng — xem docs/DECISIONS.md ADR mới nhất) nhưng được tách
+/// thành nhiều file `partial class` theo tên bước để dễ review:
+/// <c>MainWindowViewModel.Setup.cs</c>, <c>.ConfirmFiles.cs</c>,
+/// <c>.ExtractCsv.cs</c>, <c>.Translate.cs</c>, <c>.Review.cs</c>,
+/// <c>.Repack.cs</c>. File này chỉ giữ field DI, điều hướng bước
+/// (<see cref="CurrentStep"/>/<see cref="NextCommand"/>/<see cref="BackCommand"/>),
+/// và state cần dùng chung giữa nhiều bước.
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
@@ -30,179 +30,141 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IUnpackProvider _fallbackUnpackProvider;
     private readonly IGameProfileStore _profileStore;
     private readonly ILocalizationDiscoveryService _discoveryService;
+    private readonly IAssetReaderWriter _assetReaderWriter;
+    private readonly ICsvSchemaConverter _csvSchemaConverter;
+    private readonly IGeminiSettingsStore _geminiSettingsStore;
+    private readonly ITranslationService _translationService;
+    private readonly IRepackService _repackService;
 
-    // Profile của lần Quét gần nhất — Lưu dùng lại để biết ghi vào file
-    // profile nào, KHÔNG suy ra lại từ GameDirectory lúc bấm Lưu (người dùng
-    // có thể đã gõ sửa ô đường dẫn sau khi Quét xong).
+    // Profile của lần Quét gần nhất — mọi bước sau dùng lại, KHÔNG suy ra lại
+    // từ GameDirectory (người dùng có thể đã gõ sửa ô đường dẫn sau khi Quét).
     private GameProfile? _lastDetectedProfile;
 
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
-    private string _gameDirectory = string.Empty;
+    // Provider đã dùng ở bước Setup (primary hoặc fmodel-fallback) — bước
+    // ExtractCsv phải dùng ĐÚNG provider này, không phải luôn luôn primary.
+    private IUnpackProvider? _lastUsedUnpackProvider;
+
+    // AES key đã dùng thành công ở bước Setup (gõ tay hoặc lấy từ profile đã
+    // lưu) — bước ExtractCsv cần key này để mount lại đúng 1 lần nữa khi gọi
+    // ExtractFilesAsync (null nếu game không mã hoá hoặc dùng fallback).
+    private string? _lastAesKeyHex;
+
+    // VirtualPath -> (đường dẫn file thật đã extract, kind) — ghi ở bước
+    // ExtractCsv, đọc lại ở bước Repack để biết ghi bản dịch vào file nào
+    // (IAssetReaderWriter.WriteAsync cần đường dẫn thật, CsvRow.SourceFile
+    // chỉ lưu virtual path).
+    private readonly Dictionary<string, (string ExtractedFilePath, LocalizationFileKind Kind)> _extractedFileLookup = new();
+
+    // Thư mục đã extract file ra ở bước ExtractAndExportCsv — bước Repack
+    // dùng lại CHÍNH thư mục này làm modifiedAssetsDirectory (IAssetReaderWriter.WriteAsync
+    // ghi đè trực tiếp lên file trong thư mục này, xem comment trong
+    // IAssetReaderWriter.WriteAsync).
+    private string? _lastExtractDirectory;
+
+    public enum WizardStep
+    {
+        Setup,
+        ConfirmFiles,
+        ExtractAndExportCsv,
+        Translate,
+        Review,
+        Repack,
+    }
 
     [ObservableProperty]
-    private string? _aesKeyHex;
+    private WizardStep _currentStep = WizardStep.Setup;
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
-    private bool _useFModelFallback;
-
-    // Chỉ cần khi UseFModelFallback — thư mục export không có .exe để tự
-    // detect UE version, người dùng gõ tay (FModel hiển thị version lúc
-    // export). Xem docs/DECISIONS.md#adr-013.
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
-    private string? _fallbackEngineVersion;
-
-    [ObservableProperty]
-    private string _statusMessage = "Nhập đường dẫn thư mục cài game rồi bấm Quét.";
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(ScanCommand))]
-    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(BackCommand))]
+    [NotifyCanExecuteChangedFor(nameof(NextCommand))]
     private bool _isBusy;
 
-    public ObservableCollection<LocalizationCandidateItemViewModel> Candidates { get; } = new();
+    public bool IsSetupStep => CurrentStep == WizardStep.Setup;
+    public bool IsConfirmFilesStep => CurrentStep == WizardStep.ConfirmFiles;
+    public bool IsExtractAndExportCsvStep => CurrentStep == WizardStep.ExtractAndExportCsv;
+    public bool IsTranslateStep => CurrentStep == WizardStep.Translate;
+    public bool IsReviewStep => CurrentStep == WizardStep.Review;
+    public bool IsRepackStep => CurrentStep == WizardStep.Repack;
+
+    public int StepNumber => (int)CurrentStep + 1;
+    public int TotalSteps => Enum.GetValues<WizardStep>().Length;
+
+    public string StepTitle => CurrentStep switch
+    {
+        WizardStep.Setup => "Thiết lập & Quét",
+        WizardStep.ConfirmFiles => "Xác nhận file ngôn ngữ",
+        WizardStep.ExtractAndExportCsv => "Extract & Xuất CSV",
+        WizardStep.Translate => "Dịch tự động",
+        WizardStep.Review => "Review bản dịch",
+        WizardStep.Repack => "Ghi asset & Repack",
+        _ => string.Empty,
+    };
+
+    partial void OnCurrentStepChanged(WizardStep value)
+    {
+        OnPropertyChanged(nameof(IsSetupStep));
+        OnPropertyChanged(nameof(IsConfirmFilesStep));
+        OnPropertyChanged(nameof(IsExtractAndExportCsvStep));
+        OnPropertyChanged(nameof(IsTranslateStep));
+        OnPropertyChanged(nameof(IsReviewStep));
+        OnPropertyChanged(nameof(IsRepackStep));
+        OnPropertyChanged(nameof(StepNumber));
+        OnPropertyChanged(nameof(StepTitle));
+        BackCommand.NotifyCanExecuteChanged();
+        NextCommand.NotifyCanExecuteChanged();
+    }
 
     public MainWindowViewModel(
         IGameProfileDetector detector,
         [FromKeyedServices("primary")] IUnpackProvider primaryUnpackProvider,
         [FromKeyedServices("fmodel-fallback")] IUnpackProvider fallbackUnpackProvider,
         IGameProfileStore profileStore,
-        ILocalizationDiscoveryService discoveryService)
+        ILocalizationDiscoveryService discoveryService,
+        IAssetReaderWriter assetReaderWriter,
+        ICsvSchemaConverter csvSchemaConverter,
+        IGeminiSettingsStore geminiSettingsStore,
+        ITranslationService translationService,
+        IRepackService repackService)
     {
         _detector = detector;
         _primaryUnpackProvider = primaryUnpackProvider;
         _fallbackUnpackProvider = fallbackUnpackProvider;
         _profileStore = profileStore;
         _discoveryService = discoveryService;
+        _assetReaderWriter = assetReaderWriter;
+        _csvSchemaConverter = csvSchemaConverter;
+        _geminiSettingsStore = geminiSettingsStore;
+        _translationService = translationService;
+        _repackService = repackService;
     }
 
-    private bool CanScan() =>
-        !IsBusy && !string.IsNullOrWhiteSpace(GameDirectory) &&
-        (!UseFModelFallback || !string.IsNullOrWhiteSpace(FallbackEngineVersion));
-
-    [RelayCommand(CanExecute = nameof(CanScan))]
-    private async Task ScanAsync(CancellationToken cancellationToken)
+    // Next chỉ tiến được khi bước hiện tại đã có kết quả hợp lệ — mỗi bước
+    // định nghĩa điều kiện riêng trong file partial tương ứng
+    // (CanScan/CanConfirm/CanExtractAndExportCsv/...), gộp lại ở đây.
+    private bool CanGoNext() => !IsBusy && CurrentStep switch
     {
-        IsBusy = true;
-        Candidates.Clear();
-        _lastDetectedProfile = null;
+        WizardStep.Setup => _lastDetectedProfile is not null && Candidates.Count > 0,
+        WizardStep.ConfirmFiles => Candidates.Any(c => c.IsConfirmed),
+        WizardStep.ExtractAndExportCsv => _extractedFileLookup.Count > 0,
+        WizardStep.Translate => CsvRows.Count > 0,
+        WizardStep.Review => CsvRows.Count > 0,
+        WizardStep.Repack => false, // bước cuối, không có Next
+        _ => false,
+    };
 
-        try
-        {
-            var unpackProvider = UseFModelFallback ? _fallbackUnpackProvider : _primaryUnpackProvider;
-            string? aesKeyHex = null;
-            GameProfile profile;
-
-            if (UseFModelFallback)
-            {
-                // Không detect thật — GameDirectory ở đây là thư mục FModel
-                // đã export, không phải thư mục cài game (ADR-013).
-                profile = new GameProfile(
-                    GameDirectory: GameDirectory,
-                    ExecutablePath: string.Empty,
-                    ExecutableHash: string.Empty,
-                    EngineVersion: FallbackEngineVersion,
-                    PakFormat: PakFormat.Unknown,
-                    PaksDirectory: string.Empty);
-
-                // Lưu ngay để SaveAsync (bước xác nhận file ngôn ngữ) dùng
-                // được sau này — luồng fallback không có bước resolve-key
-                // nên không AES key nào để lưu, xem CLI discover-fallback.
-                var saveProfileResult = await _profileStore.SaveAsync(profile, validatedAesKeys: [], cancellationToken);
-                if (!saveProfileResult.IsSuccess)
-                {
-                    StatusMessage = $"Lưu profile fallback thất bại: {saveProfileResult.Error}";
-                    return;
-                }
-            }
-            else
-            {
-                StatusMessage = "Đang detect game...";
-                var detectResult = await _detector.DetectAsync(GameDirectory, cancellationToken);
-                if (!detectResult.IsSuccess)
-                {
-                    StatusMessage = $"Detect thất bại: {detectResult.Error}";
-                    return;
-                }
-
-                profile = detectResult.Value!;
-
-                // Chưa gõ key thủ công thì thử lấy key đã lưu từ lần
-                // resolve-key trước (giống CLI `discover` — xem
-                // docs/DECISIONS.md#adr-007/009).
-                aesKeyHex = AesKeyHex;
-                if (string.IsNullOrWhiteSpace(aesKeyHex))
-                {
-                    var loadResult = await _profileStore.LoadAsync(GameDirectory, cancellationToken);
-                    if (loadResult.IsSuccess && loadResult.Value!.ValidatedAesKeys.Count > 0)
-                        aesKeyHex = loadResult.Value.ValidatedAesKeys[0];
-                }
-            }
-
-            var progress = new Progress<ProgressInfo>(p => StatusMessage = p.Message);
-
-            StatusMessage = UseFModelFallback ? "Đang liệt kê thư mục export..." : "Đang unpack...";
-            var outputDirectory = Path.Combine(Path.GetTempPath(), "uevt-unpack");
-            var unpackResult = await unpackProvider.UnpackAsync(
-                profile, aesKeyHex, outputDirectory, progress, cancellationToken);
-            if (!unpackResult.IsSuccess)
-            {
-                StatusMessage = $"Unpack thất bại: {unpackResult.Error}";
-                return;
-            }
-
-            StatusMessage = "Đang quét file ngôn ngữ...";
-            var scanResult = await _discoveryService.ScanAsync(
-                unpackProvider, profile, aesKeyHex, unpackResult.Value!, progress, cancellationToken);
-            if (!scanResult.IsSuccess)
-            {
-                StatusMessage = $"Quét thất bại: {scanResult.Error}";
-                return;
-            }
-
-            foreach (var candidate in scanResult.Value!.OrderByDescending(c => c.Confidence))
-                Candidates.Add(new LocalizationCandidateItemViewModel(candidate));
-
-            _lastDetectedProfile = profile;
-            StatusMessage = Candidates.Count > 0
-                ? $"Tìm được {Candidates.Count} candidate. Tick chọn file đúng rồi bấm Lưu."
-                : "Không tìm được candidate nào.";
-        }
-        finally
-        {
-            IsBusy = false;
-            SaveCommand.NotifyCanExecuteChanged();
-        }
+    [RelayCommand(CanExecute = nameof(CanGoNext))]
+    private void Next()
+    {
+        if (CurrentStep < WizardStep.Repack)
+            CurrentStep++;
     }
 
-    private bool CanSave() => !IsBusy && _lastDetectedProfile is not null && Candidates.Count > 0;
+    private bool CanGoBack() => !IsBusy && CurrentStep > WizardStep.Setup;
 
-    [RelayCommand(CanExecute = nameof(CanSave))]
-    private async Task SaveAsync(CancellationToken cancellationToken)
+    [RelayCommand(CanExecute = nameof(CanGoBack))]
+    private void Back()
     {
-        if (_lastDetectedProfile is null)
-            return;
-
-        IsBusy = true;
-        try
-        {
-            var confirmed = Candidates
-                .Where(c => c.IsConfirmed)
-                .Select(c => new ConfirmedLocalizationFile(c.Path, c.Kind))
-                .ToList();
-
-            var result = await _profileStore.SaveConfirmedLocalizationFilesAsync(
-                _lastDetectedProfile.GameDirectory, confirmed, cancellationToken);
-
-            StatusMessage = result.IsSuccess
-                ? $"Đã lưu {confirmed.Count} file ngôn ngữ đã xác nhận vào profile."
-                : $"Lưu thất bại: {result.Error}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        if (CurrentStep > WizardStep.Setup)
+            CurrentStep--;
     }
 }

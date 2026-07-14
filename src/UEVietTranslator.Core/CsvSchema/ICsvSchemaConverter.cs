@@ -34,6 +34,17 @@ public interface ICsvSchemaConverter
         CancellationToken cancellationToken);
 
     Task<Result<IReadOnlyList<CsvRow>>> ImportAsync(string csvPath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Ghi <paramref name="rows"/> (đã có bản dịch/status cập nhật, VD sau khi
+    /// <c>ITranslationService.TranslateBatchAsync</c> hoặc người dùng sửa tay
+    /// trong màn hình Review) ĐÈ LÊN <paramref name="csvPath"/> — khác
+    /// <see cref="ExportAsync"/> (luôn ghi <c>TranslatedText</c> rỗng cho lần
+    /// export đầu tiên từ asset gốc), method này ghi nguyên trạng thái hiện
+    /// tại của <see cref="CsvRow"/> để round-trip qua lại nhiều lần giữa app
+    /// và CSV không mất dữ liệu đã dịch/review.
+    /// </summary>
+    Task<Result> WriteRowsAsync(IReadOnlyList<CsvRow> rows, string csvPath, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -131,6 +142,39 @@ public sealed class CsvSchemaConverter : ICsvSchemaConverter
         catch (Exception ex)
         {
             return Result<IReadOnlyList<CsvRow>>.Failure($"Import CSV thất bại: {csvPath} — {ex.Message}");
+        }
+    }
+
+    public async Task<Result> WriteRowsAsync(IReadOnlyList<CsvRow> rows, string csvPath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(csvPath);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            await using var writer = new StreamWriter(csvPath);
+            await using var csv = new CsvWriter(writer, CsvConfig);
+
+            var records = rows.Select(row => new CsvRecord
+            {
+                SourceFile = row.SourceFile,
+                Namespace = row.Namespace,
+                Key = row.Key,
+                SourceText = row.SourceText,
+                Context = row.Context,
+                TranslatedText = row.TranslatedText,
+                Status = row.Status.ToString(),
+            });
+
+            csv.Context.RegisterClassMap<CsvRecordMap>();
+            await csv.WriteRecordsAsync(records, cancellationToken).ConfigureAwait(false);
+
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            return Result.Failure($"Ghi CSV thất bại: {csvPath} — {ex.Message}");
         }
     }
 

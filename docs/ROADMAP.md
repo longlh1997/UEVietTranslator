@@ -229,27 +229,60 @@ class từng export, KHÔNG đọc pixel/vertex/text thật). **CHƯA implement*
       Accessibility của sandbox này).
 
 ## Pha 6 — Đóng gói & UI hoàn chỉnh
-- [ ] Avalonia UI dạng wizard đầy đủ các bước
+- [x] Avalonia UI dạng wizard đầy đủ các bước (2026-07-14 — xem ADR-014.
+      `MainWindowViewModel` tách thành 1 file host + 6 file `partial class`
+      theo tên bước (`Setup`/`ConfirmFiles`/`ExtractCsv`/`Translate`/`Review`/
+      `Repack`), `MainWindow.axaml` viết lại thành 6 `Border` ẩn/hiện theo
+      `CurrentStep` + thanh "Quay lại"/"Tiếp tục" cố định. 4 bước MỚI so với
+      Pha 3/5 (2 bước đầu chỉ dời file, giữ nguyên logic):
+      - **ExtractAndExportCsv:** gọi `IUnpackProvider.ExtractFilesAsync` 1
+        lần cho các file đã tick, `IAssetReaderWriter.ReadAsync` từng file,
+        gộp theo virtual path, xuất CSV qua `ICsvSchemaConverter.ExportAsync`.
+      - **Translate:** cấu hình Gemini key/model
+        (`IGeminiSettingsStore`), đọc CSV → `ITranslationService.TranslateBatchAsync`
+        → ghi đè lại CSV bằng method MỚI `ICsvSchemaConverter.WriteRowsAsync`
+        (xem ADR-014 — lỗ hổng thiết kế còn sót từ Pha 4, interface cũ không
+        có cách ghi `CsvRow` đã dịch ngược ra đĩa).
+      - **Review:** danh sách sửa được NGAY TRONG APP (quyết định UX đã hỏi
+        và chốt với Hải Long — không bắt buộc sửa ngoài Excel dù Pha 4 ghi
+        "CSV là single source of truth"), file mới `CsvRowItemViewModel.cs`
+        cùng style với `LocalizationCandidateItemViewModel.cs` đã có. Nút
+        "Lưu CSV" và "Tải lại từ CSV" (dùng khi Hải Long cũng sửa tay CSV
+        song song bằng Excel).
+      - **Repack:** ghi bản dịch đè lên đúng file đã extract (map
+        `VirtualPath -> (ExtractedFilePath, Kind)` lưu từ bước
+        ExtractAndExportCsv) qua `IAssetReaderWriter.WriteAsync`, rồi gọi
+        `IRepackService.RepackAsync`.
+      Build sạch + 52/52 test pass trên máy thật (.NET 8 SDK 8.0.422, gồm 1
+      test mới cho `WriteRowsAsync`). Đã chạy thử `dotnet run --project
+      src/UEVietTranslator.App` — process sống, không crash, không lỗi
+      binding XAML trong log. **CHƯA verify được bằng mắt** (sandbox không có
+      quyền Accessibility để chụp screenshot cửa sổ thật, giống mọi ghi chú
+      UI trước) và **CHƯA chạy thử toàn bộ 6 bước với Dragonwilds thật** —
+      cần Hải Long tự chạy app, đi hết wizard với game thật, xác nhận mỗi
+      bước hoạt động đúng và layout hiển thị hợp lý.)
 - [ ] Publish self-contained exe
 - [ ] Test với ít nhất 1 game UE khác ngoài Dragonwilds để xác nhận tool
       "dùng chung được", không chỉ hoạt động với 1 game
 
 ---
 
-**Trạng thái hiện tại (2026-07-14):** Pha 0-4 code đã xong hoàn toàn (trừ mục
-"Test full pipeline end-to-end" — cần Hải Long), verify build + test trên máy
-thật (.NET 8 SDK 8.0.422, 45/45 test pass). Pha 4 có 3 rủi ro CHƯA verify với
-thực tế (xem chi tiết ở từng mục trên): (1) `.locres` write tự viết binary —
-ADR-010, (2) `repak`/`retoc` CLI ngoài chưa chạy thử binary thật — ADR-012,
-(3) Gemini API chưa gọi thật. Bước tiếp theo: Pha 5 (FModel fallback) hoặc
-Pha 6 (UI wizard đầy đủ) — NÊN ưu tiên Hải Long tự test pipeline thật với
-Dragonwilds trước khi đầu tư thêm code mới, vì cả 3 rủi ro trên đều có thể
-đổi hướng thiết kế nếu phát hiện sai lúc test thật.
+**Trạng thái hiện tại (2026-07-14):** Pha 0-6 code đã xong phần lớn (trừ
+"Test full pipeline end-to-end" ở Pha 4, "Publish self-contained exe" và
+"Test với game UE khác" ở Pha 6 — cả 3 đều cần Hải Long), verify build + test
+trên máy thật (.NET 8 SDK 8.0.422, 52/52 test pass). Rủi ro CHƯA verify với
+thực tế vẫn còn nguyên (xem chi tiết ở từng mục trên): (1) `.locres` write tự
+viết binary — ADR-010, (2) `repak`/`retoc` CLI ngoài chưa chạy thử binary
+thật — ADR-012, (3) Gemini API chưa gọi thật, (4) wizard UI mới của Pha 6
+chưa chạy thử bằng mắt/với game thật. Bước tiếp theo NÊN là Hải Long tự chạy
+trọn wizard với Dragonwilds thật — mọi rủi ro trên đều có thể đổi hướng thiết
+kế nếu phát hiện sai lúc test thật, trước khi đầu tư thêm vào "Publish" hay
+"test game khác".
 
-Vẫn cần Hải Long tự chạy CLI với Dragonwilds thật
-(`detect`/`unpack`/`resolve-key`/`discover`/`read-locfile`/`repack`) VÀ tự
-chạy thử app Avalonia (`dotnet run --project src/UEVietTranslator.App`) để
-xác nhận màn hình xác nhận file ngôn ngữ hiển thị/hoạt động đúng — Claude
+Vẫn cần Hải Long tự chạy thử app Avalonia
+(`dotnet run --project src/UEVietTranslator.App`) đi hết 6 bước wizard với
+Dragonwilds thật, và/hoặc CLI tương ứng
+(`detect`/`unpack`/`resolve-key`/`discover`/`read-locfile`/`repack`) — Claude
 Code chưa verify được bằng mắt do sandbox không có quyền Accessibility để
-chụp screenshot cửa sổ app thật (xem ghi chú ở mục UI Pha 3). Mọi test hiện có đều
-dùng fixture giả lập, chưa test với game thật.
+chụp screenshot cửa sổ app thật (xem ghi chú ở mục UI Pha 3). Mọi test hiện có
+đều dùng fixture giả lập, chưa test với game thật.

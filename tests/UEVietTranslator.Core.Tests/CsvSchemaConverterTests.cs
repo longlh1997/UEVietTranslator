@@ -78,4 +78,35 @@ public class CsvSchemaConverterTests : IDisposable
         Assert.False(result.IsSuccess);
         Assert.Contains("không tồn tại", result.Error);
     }
+
+    [Fact]
+    public async Task WriteRowsRoiImport_GiuNguyenBanDichVaStatusDaCapNhat()
+    {
+        var converter = new CsvSchemaConverter();
+        var csvPath = Path.Combine(_tempDir, "translated.csv");
+
+        var rows = new List<CsvRow>
+        {
+            new("Game/vi/Game.locres", "UI", "Btn_Start", "Start", null, "Bắt đầu", TranslationStatus.MachineTranslated),
+            new("Game/vi/Game.locres", "UI", "Btn_Quit", "Quit", "context here", "Thoát", TranslationStatus.Reviewed),
+        };
+
+        var writeResult = await converter.WriteRowsAsync(rows, csvPath, CancellationToken.None);
+        Assert.True(writeResult.IsSuccess, writeResult.Error);
+
+        var importResult = await converter.ImportAsync(csvPath, CancellationToken.None);
+        Assert.True(importResult.IsSuccess, importResult.Error);
+
+        var importedRows = importResult.Value!;
+        Assert.Equal(2, importedRows.Count);
+
+        var startRow = importedRows.Single(r => r.Key == "Btn_Start");
+        Assert.Equal("Bắt đầu", startRow.TranslatedText);
+        Assert.Equal(TranslationStatus.MachineTranslated, startRow.Status);
+
+        var quitRow = importedRows.Single(r => r.Key == "Btn_Quit");
+        Assert.Equal("Thoát", quitRow.TranslatedText);
+        Assert.Equal("context here", quitRow.Context);
+        Assert.Equal(TranslationStatus.Reviewed, quitRow.Status);
+    }
 }
